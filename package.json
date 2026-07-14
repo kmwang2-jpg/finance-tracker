@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "homepage": "https://kmwang2-jpg.github.io/personal-finance",
+  "homepage": "https://kmwang2-jpg.github.io/finance-tracker",
   "scripts": {
   "dev": "vite",
   "build": "vite build",
