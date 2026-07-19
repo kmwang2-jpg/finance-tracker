@@ -1,3 +1,5 @@
+import { normalizeCashFlowItem } from './recurrence';
+
 const STORAGE_KEYS = {
   categories: 'pf:categories',
   cashflows: 'pf:cashflows',
@@ -8,14 +10,14 @@ const STORAGE_KEYS = {
 };
 
 const defaultCategories = [
-  { id: 1, name: 'Income', parentCategoryId: null },
-  { id: 2, name: 'Housing', parentCategoryId: null },
-  { id: 3, name: 'Utilities', parentCategoryId: null },
-  { id: 4, name: 'Food', parentCategoryId: null },
-  { id: 5, name: 'Transportation', parentCategoryId: null },
-  { id: 6, name: 'Debt', parentCategoryId: null },
-  { id: 7, name: 'Savings', parentCategoryId: null },
-  { id: 8, name: 'Taxes', parentCategoryId: null }
+  { id: 1, name: 'Income', type: 'income', parentCategoryId: null },
+  { id: 2, name: 'Housing', type: 'expense', parentCategoryId: null },
+  { id: 3, name: 'Utilities', type: 'expense', parentCategoryId: null },
+  { id: 4, name: 'Food', type: 'expense', parentCategoryId: null },
+  { id: 5, name: 'Transportation', type: 'expense', parentCategoryId: null },
+  { id: 6, name: 'Debt', type: 'expense', parentCategoryId: null },
+  { id: 7, name: 'Savings', type: 'expense', parentCategoryId: null },
+  { id: 8, name: 'Taxes', type: 'expense', parentCategoryId: null }
 ];
 
 const defaultCashflows = [
@@ -26,7 +28,7 @@ const defaultCashflows = [
     categoryId: 1,
     type: 'income',
     amount: 5200,
-    frequency: 'monthly',
+    recurrence: { interval: 1, unit: 'months', anchor: '2026-01-01' },
     startDate: '2026-01-01',
     endDate: null,
     isActive: true
@@ -38,7 +40,7 @@ const defaultCashflows = [
     categoryId: 2,
     type: 'expense',
     amount: 1500,
-    frequency: 'monthly',
+    recurrence: { interval: 1, unit: 'months', anchor: '2026-01-01' },
     startDate: '2026-01-01',
     endDate: null,
     isActive: true
@@ -50,7 +52,7 @@ const defaultCashflows = [
     categoryId: 4,
     type: 'expense',
     amount: 180,
-    frequency: 'weekly',
+    recurrence: { interval: 1, unit: 'weeks', anchor: 'Friday' },
     startDate: '2026-01-01',
     endDate: null,
     isActive: true
@@ -62,7 +64,7 @@ const defaultCashflows = [
     categoryId: 7,
     type: 'savings_contribution',
     amount: 300,
-    frequency: 'monthly',
+    recurrence: { interval: 1, unit: 'months', anchor: '2026-01-01' },
     startDate: '2026-01-01',
     endDate: null,
     isActive: true
@@ -119,11 +121,27 @@ function nextId(items) {
 }
 
 export function loadCategories() {
-  return loadStorage(STORAGE_KEYS.categories, defaultCategories);
+  const saved = loadStorage(STORAGE_KEYS.categories, defaultCategories);
+  const normalized = saved.map((category) => ({
+    ...category,
+    type: category.type || (category.name === 'Income' ? 'income' : 'expense'),
+    parentCategoryId: category.parentCategoryId ?? null
+  }));
+
+  if (JSON.stringify(normalized) !== JSON.stringify(saved)) {
+    saveCategories(normalized);
+  }
+
+  return normalized;
 }
 
 export function loadCashFlows() {
-  return loadStorage(STORAGE_KEYS.cashflows, defaultCashflows);
+  const saved = loadStorage(STORAGE_KEYS.cashflows, defaultCashflows);
+  const normalized = saved.map(normalizeCashFlowItem);
+  if (JSON.stringify(normalized) !== JSON.stringify(saved)) {
+    saveCashFlows(normalized);
+  }
+  return normalized;
 }
 
 export function loadActuals() {
@@ -156,6 +174,33 @@ export function saveActuals(actuals) {
 
 export function saveGoals(goals) {
   saveStorage(STORAGE_KEYS.goals, goals);
+}
+
+export function createCategory(payload) {
+  const categories = loadCategories();
+  const next = nextId(categories);
+  const newCategory = { id: next, ...payload };
+  saveCategories([...categories, newCategory]);
+  return newCategory;
+}
+
+export function updateCategory(id, payload) {
+  const categories = loadCategories();
+  const updated = categories.map((category) => (category.id === id ? { ...category, ...payload, id } : category));
+  saveCategories(updated);
+  return updated.find((category) => category.id === id) ?? null;
+}
+
+export function deleteCategory(id) {
+  const categories = loadCategories();
+  const updatedCategories = categories.filter((category) => category.id !== id);
+  saveCategories(updatedCategories);
+
+  const cashflows = loadCashFlows();
+  const updatedCashflows = cashflows.map((item) => (item.categoryId === id ? { ...item, categoryId: null } : item));
+  saveCashFlows(updatedCashflows);
+
+  return { categories: updatedCategories, cashflows: updatedCashflows };
 }
 
 export function saveDebts(debts) {

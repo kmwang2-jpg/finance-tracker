@@ -1,12 +1,4 @@
-const FREQUENCY_MULTIPLIERS = {
-  one_time: 0,
-  weekly: 52 / 12,
-  biweekly: 26 / 12,
-  monthly: 1,
-  quarterly: 1 / 3,
-  semiannual: 1 / 6,
-  annual: 1 / 12
-};
+import { countOccurrencesInMonth } from './recurrence';
 
 function monthLabel(year, month) {
   return `${new Date(year, month - 1).toLocaleString(undefined, { month: 'short' })} ${year}`;
@@ -26,12 +18,8 @@ function cashflowAmountForMonth(item, year, month) {
     return 0;
   }
 
-  if (item.frequency === 'one_time') {
-    const eventDate = new Date(item.startDate);
-    return eventDate.getFullYear() === year && eventDate.getMonth() + 1 === month ? item.amount : 0;
-  }
-
-  return item.amount * (FREQUENCY_MULTIPLIERS[item.frequency] ?? 0);
+  const count = countOccurrencesInMonth(item, year, month);
+  return item.amount * count;
 }
 
 function buildMonthData(year, month, cashflows) {
