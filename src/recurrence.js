@@ -1,6 +1,6 @@
 const DAYS_PER_WEEK = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+// Weekly support removed: keep date-based utilities only
 
 function pad(value) {
   return String(value).padStart(2, '0');
@@ -29,14 +29,31 @@ export function formatIsoDate(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-export function getWeekdayName(date) {
-  const day = date.getDay();
-  return day === 0 ? 'Sunday' : WEEKDAYS[day - 1];
+export function buildRecurrenceFormState(prevForm, updates) {
+  const nextForm = { ...prevForm };
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'recurrenceUnit')) {
+    nextForm.recurrenceUnit = updates.recurrenceUnit;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'recurrenceInterval')) {
+    nextForm.recurrenceInterval = updates.recurrenceInterval;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'startDate')) {
+    nextForm.startDate = updates.startDate;
+  }
+
+  if (typeof updates.normalizeAnchor === 'function') {
+    nextForm.recurrenceAnchor = updates.normalizeAnchor(nextForm);
+  } else if (Object.prototype.hasOwnProperty.call(updates, 'recurrenceAnchor')) {
+    nextForm.recurrenceAnchor = updates.recurrenceAnchor;
+  }
+
+  return nextForm;
 }
 
-export function weekdayIndex(name) {
-  return WEEKDAYS.indexOf(name) + 1;
-}
+// NOTE: weekday helpers removed along with weekly recurrence support
 
 export function normalizeCashFlowItem(item) {
   if (!item || typeof item !== 'object') {
@@ -51,8 +68,7 @@ export function normalizeCashFlowItem(item) {
   const startDate = typeof normalized.startDate === 'string' ? normalized.startDate : null;
   const recurrence = {
     one_time: null,
-    weekly: { interval: 1, unit: 'weeks', anchor: startDate ? getWeekdayName(parseIsoDate(startDate)) : 'Monday' },
-    biweekly: { interval: 2, unit: 'weeks', anchor: startDate ? getWeekdayName(parseIsoDate(startDate)) : 'Monday' },
+    // weekly and biweekly recurrence options removed
     monthly: { interval: 1, unit: 'months', anchor: startDate },
     quarterly: { interval: 3, unit: 'months', anchor: startDate },
     semiannual: { interval: 6, unit: 'months', anchor: startDate },
@@ -108,32 +124,11 @@ export function getRecurrenceDescription(item) {
   const interval = recurrence.interval || 1;
   const unit = recurrence.unit;
   const anchor = recurrence.anchor;
+  const anchorDate = parseIsoDate(anchor);
+  const formattedAnchor = anchorDate ? formatIsoDate(anchorDate) : anchor;
+  const intervalLabel = `${interval} ${unit === 'months' ? 'month' : unit === 'years' ? 'year' : unit}${interval === 1 ? '' : 's'}`;
 
-  if (unit === 'days') {
-    return `Every ${interval} day${interval === 1 ? '' : 's'} starting ${anchor}`;
-  }
-
-  if (unit === 'weeks') {
-    return `Every ${interval} week${interval === 1 ? '' : 's'} on ${anchor}`;
-  }
-
-  if (unit === 'months') {
-    const anchorDate = parseIsoDate(anchor);
-    if (interval === 1 && anchorDate) {
-      return `Every month on day ${anchorDate.getDate()}`;
-    }
-    return `Every ${interval} month${interval === 1 ? '' : 's'} starting ${anchorDate ? formatIsoDate(anchorDate) : anchor}`;
-  }
-
-  if (unit === 'years') {
-    const anchorDate = parseIsoDate(anchor);
-    if (anchorDate) {
-      return `Every ${interval} year${interval === 1 ? '' : 's'} on ${anchorDate.getMonth() + 1}/${anchorDate.getDate()}`;
-    }
-    return `Every ${interval} year${interval === 1 ? '' : 's'}`;
-  }
-
-  return 'Recurring';
+  return `Repeat every ${intervalLabel}, starting on ${formattedAnchor}`;
 }
 
 export function countOccurrencesInMonth(item, year, month) {
@@ -155,7 +150,7 @@ export function countOccurrencesInMonth(item, year, month) {
     return isSameMonthYear(startDate, year, month) && (!endDate || startDate <= endDate) ? 1 : 0;
   }
 
-  if (!startDate || !recurrence.unit) {
+  if (!recurrence.anchor || !recurrence.unit) {
     return 0;
   }
 
@@ -167,54 +162,7 @@ export function countOccurrencesInMonth(item, year, month) {
     return 0;
   }
 
-  if (recurrence.unit === 'days') {
-    const anchorDate = parseIsoDate(recurrence.anchor);
-    if (!anchorDate) {
-      return 0;
-    }
-
-    const afterStart = startDate > anchorDate ? startDate : anchorDate;
-    const offsetDays = Math.max(0, Math.ceil((dateAtStartOfDay(afterStart) - dateAtStartOfDay(anchorDate)) / MS_PER_DAY / recurrence.interval));
-    let candidate = addDays(anchorDate, offsetDays * recurrence.interval);
-    let count = 0;
-
-    while (candidate <= monthEnd && (!endDate || candidate <= endDate)) {
-      if (candidate >= afterStart && isSameMonthYear(candidate, year, month)) {
-        count += 1;
-      }
-      candidate = addDays(candidate, recurrence.interval);
-    }
-
-    return count;
-  }
-
-  if (recurrence.unit === 'weeks') {
-    const anchorWeekday = weekdayIndex(recurrence.anchor);
-    if (anchorWeekday < 1) {
-      return 0;
-    }
-
-    const activeStart = startDate;
-    const firstCandidate = getNextWeekday(activeStart, anchorWeekday);
-    if (endDate && firstCandidate > endDate) {
-      return 0;
-    }
-
-    let candidate = firstCandidate;
-    while (candidate < monthStart) {
-      candidate = addDays(candidate, recurrence.interval * DAYS_PER_WEEK);
-    }
-
-    let count = 0;
-    while (candidate <= monthEnd && (!endDate || candidate <= endDate)) {
-      if (isSameMonthYear(candidate, year, month)) {
-        count += 1;
-      }
-      candidate = addDays(candidate, recurrence.interval * DAYS_PER_WEEK);
-    }
-
-    return count;
-  }
+  // daily recurrence support removed
 
   if (recurrence.unit === 'months') {
     const anchorDate = parseIsoDate(recurrence.anchor);
@@ -257,11 +205,4 @@ export function countOccurrencesInMonth(item, year, month) {
   return 0;
 }
 
-function getNextWeekday(date, weekday) {
-  const currentIsoDay = date.getDay() === 0 ? 7 : date.getDay();
-  const delta = (weekday - currentIsoDay + 7) % 7;
-  return addDays(date, delta);
-}
-
-export const RECURRENCE_UNITS = ['one_time', 'days', 'weeks', 'months', 'years'];
-export const WEEKDAY_OPTIONS = WEEKDAYS;
+export const RECURRENCE_UNITS = ['one_time', 'months', 'years'];
